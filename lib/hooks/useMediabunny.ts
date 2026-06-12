@@ -17,7 +17,8 @@ import { Mockup } from '../constants/mockups';
 export type Background =
   | { type: 'color'; color: string }
   | { type: 'gradient'; from: string; to: string; angle: number }
-  | { type: 'image'; file: File };
+  | { type: 'image'; file: File }
+  | { type: 'pattern'; url: string };
 
 export type ExportFormat = 'mp4' | 'webm-transparent';
 
@@ -141,7 +142,7 @@ const paintBackground = (
     ctx.fillRect(0, 0, width, height);
     return;
   }
-  if (background.type === 'image' && backgroundImage) {
+  if ((background.type === 'image' || background.type === 'pattern') && backgroundImage) {
     const imgAspect = backgroundImage.width / backgroundImage.height;
     const canvasAspect = width / height;
     let sx = 0, sy = 0, sw = backgroundImage.width, sh = backgroundImage.height;
@@ -247,6 +248,9 @@ const useMediabunny = (): UseMediabunnyHook => {
       let backgroundImage: ImageBitmap | null = null;
       if (background.type === 'image') {
         backgroundImage = await createImageBitmap(background.file);
+      } else if (background.type === 'pattern') {
+        const patternBlob = await (await fetch(background.url)).blob();
+        backgroundImage = await createImageBitmap(patternBlob);
       }
 
       const inputs = videoFiles.map(
