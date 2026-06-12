@@ -15,6 +15,7 @@ import {
 } from "@/lib/colorFormat";
 import { colors } from "@/lib/constants/colors";
 import { gradientPresets } from "@/lib/constants/gradientPresets";
+import { margeloTheme, margeloTileDataUri } from "@/lib/constants/themes";
 import { mockupsDefs } from "@/lib/constants/mockups";
 import { aspectRatios } from "@/lib/constants/sizes";
 import useMediabunny, { type Background, type ExportFormat } from "@/lib/hooks/useMediabunny";
@@ -64,6 +65,7 @@ export default function App() {
 
   const [bgTab, setBgTab] = useState<BgTab>("color");
   const [solidColor, setSolidColor] = useState(defaultSolidColor);
+  const [margeloThemeSelected, setMargeloThemeSelected] = useState(false);
   const [gradient, setGradient] = useState({ from: "#a5f3fc", to: "#f5d0fe", angle: 135 });
   const [bgImageFile, setBgImageFile] = useState<File | null>(null);
   const [bgImageUrl, setBgImageUrl] = useState<string>("");
@@ -71,8 +73,9 @@ export default function App() {
   const background: Background = useMemo(() => {
     if (bgTab === "gradient") return { type: "gradient", ...gradient };
     if (bgTab === "image" && bgImageFile) return { type: "image", file: bgImageFile };
+    if (margeloThemeSelected) return { type: "margelo" };
     return { type: "color", color: solidColor };
-  }, [bgTab, gradient, bgImageFile, solidColor]);
+  }, [bgTab, gradient, bgImageFile, margeloThemeSelected, solidColor]);
 
   const isTransparentExport = exportFormat === "webm-transparent";
   const previewSurfaceStyle = useMemo(
@@ -455,6 +458,7 @@ export default function App() {
     setVideoScale(100);
     setBgTab("color");
     setSolidColor(defaultSolidColor);
+    setMargeloThemeSelected(false);
     setGradient({ from: "#a5f3fc", to: "#f5d0fe", angle: 135 });
     setBgImageFile(null);
     setVideoDurations(Array(deviceCount).fill(0));
@@ -478,7 +482,7 @@ export default function App() {
   return (
     <main
       className="flex min-h-screen flex-col items-center justify-center px-[5%]"
-      style={{ backgroundColor: solidColor + "33" }}
+      style={{ backgroundColor: (background.type === "margelo" ? margeloTheme.backgroundColor : solidColor) + "33" }}
     >
       <div className="flex-1 flex flex-col text-center justify-center items-center">
         <span className="text-base text-black/70 font-medium mb-1">Video Mockup Generator</span>
@@ -951,12 +955,28 @@ export default function App() {
                               "w-6 h-6 rounded-full cursor-pointer flex items-center justify-center border border-black/10 shadow-sm flex-shrink-0",
                             )}
                             style={{ backgroundColor: color }}
-                            onClick={() => setSolidColor(normalizeColorHex(color))}
+                            onClick={() => {
+                              setMargeloThemeSelected(false);
+                              setSolidColor(normalizeColorHex(color));
+                            }}
                             aria-label={`Color ${color}`}
                           >
-                            {solidColor === color && <div className="bg-white shadow-sm rounded-full h-2.5 w-2.5" />}
+                            {!margeloThemeSelected && solidColor === color && <div className="bg-white shadow-sm rounded-full h-2.5 w-2.5" />}
                           </button>
                         ))}
+                        <button
+                          className="w-6 h-6 rounded-full cursor-pointer flex items-center justify-center border border-black/10 shadow-sm flex-shrink-0"
+                          style={{
+                            backgroundColor: margeloTheme.backgroundColor,
+                            backgroundImage: `url("${margeloTileDataUri}")`,
+                            backgroundSize: "8px 8px",
+                          }}
+                          onClick={() => setMargeloThemeSelected(true)}
+                          aria-label="Margelo theme"
+                          title="Margelo theme"
+                        >
+                          {margeloThemeSelected && <div className="bg-white shadow-sm rounded-full h-2.5 w-2.5" />}
+                        </button>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-black/70">
                         <span className="flex-1">Custom</span>
@@ -964,7 +984,10 @@ export default function App() {
                           type="color"
                           autoComplete="off"
                           value={solidColor}
-                          onChange={(e) => setSolidColor(normalizeColorHex(e.target.value))}
+                          onChange={(e) => {
+                            setMargeloThemeSelected(false);
+                            setSolidColor(normalizeColorHex(e.target.value));
+                          }}
                           className={colorPickerSwatchInputClassName}
                         />
                       </label>
