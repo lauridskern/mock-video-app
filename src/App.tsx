@@ -36,9 +36,11 @@ import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useSta
 
 type DeviceCount = 1 | 2 | 3;
 type BgTab = "color" | "gradient" | "image";
+type MediaMode = "video" | "image";
 
 export default function App() {
-  const { generateVideo, progress, reset, transpilingFinished, finishedVideoUrl, transpilingStarted } = useMediabunny();
+  const { generateVideo, generateImage, progress, reset, transpilingFinished, finishedVideoUrl, transpilingStarted } = useMediabunny();
+  const [mediaMode, setMediaMode] = useState<MediaMode>("video");
   const [selectedMockup, setSelectedMockup] = useState(defaultMockup);
   const [scale, setScale] = useState(90);
   const [videoScale, setVideoScale] = useState(100);
@@ -74,7 +76,7 @@ export default function App() {
     return { type: "color", color: solidColor };
   }, [bgTab, gradient, bgImageFile, solidColor]);
 
-  const isTransparentExport = exportFormat === "webm-transparent";
+  const isTransparentExport = mediaMode === "video" && exportFormat === "webm-transparent";
   const previewSurfaceStyle = useMemo(
     () =>
       buildPreviewSurfaceStyle({
@@ -215,6 +217,22 @@ export default function App() {
       return next;
     });
   }, []);
+
+  const handleMediaModeChange = useCallback((nextMode: MediaMode) => {
+    if (nextMode === mediaMode) return;
+    setMediaMode(nextMode);
+    setPreviewPlaying(false);
+    setPreviewCompleted(false);
+    setPreviewScrubTime(0);
+    setVideoFiles(Array(deviceCount).fill(null));
+    setVideoDurations(Array(deviceCount).fill(0));
+    setVideoDimensions(Array(deviceCount).fill(null));
+    setVideoStartOffsets(Array(deviceCount).fill(0));
+    setVideoEndOffsets(Array(deviceCount).fill(0));
+    videoRefs.current = [];
+    setExportFormat("mp4");
+    reset();
+  }, [deviceCount, mediaMode, reset]);
 
   const setVideoDurationAt = useCallback((idx: number, duration: number) => {
     const safeDuration = Number.isFinite(duration) ? duration : 0;
@@ -398,16 +416,18 @@ export default function App() {
 
   const handleFileChangeAt = useCallback((idx: number) => (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files && files.length > 0) setVideoAt(idx, files[0]);
+    const file = files?.[0];
+    if (file && file.type.startsWith(`${mediaMode}/`)) setVideoAt(idx, file);
     setTimeout(() => { event.target.value = ""; }, 50);
-  }, [setVideoAt]);
+  }, [mediaMode, setVideoAt]);
 
   const handleDropAt = useCallback((idx: number) => (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     setActiveDragIdx(null);
     const files = event.dataTransfer.files;
-    if (files && files.length > 0) setVideoAt(idx, files[0]);
-  }, [setVideoAt]);
+    const file = files?.[0];
+    if (file && file.type.startsWith(`${mediaMode}/`)) setVideoAt(idx, file);
+  }, [mediaMode, setVideoAt]);
 
   const handleBgImageChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -427,6 +447,21 @@ export default function App() {
     const filledFiles = videoFiles.filter((f): f is File => f !== null);
     if (filledFiles.length !== deviceCount) return;
     setPreviewPlaying(false);
+    if (mediaMode === "image") {
+      generateImage({
+        imageFiles: filledFiles,
+        mockup: selectedMockup,
+        background,
+        canvasWidth: selectedAspectRatio.width,
+        canvasHeight: selectedAspectRatio.height,
+        phoneSizePercentage: scale,
+        videoSizePercentage: videoScale,
+        mockupBackgroundColor: "black",
+        verticalOffset,
+        deviceGapPercent,
+      });
+      return;
+    }
     generateVideo({
       videoFiles: filledFiles,
       mockup: selectedMockup,
@@ -481,12 +516,33 @@ export default function App() {
       style={{ backgroundColor: solidColor + "33" }}
     >
       <div className="flex-1 flex flex-col text-center justify-center items-center">
-        <span className="text-base text-black/70 font-medium mb-1">Video Mockup Generator</span>
+        <span className="text-base text-black/70 font-medium mb-1">Mockup Generator</span>
         <span className="text-xs text-black/45">
           {deviceCount > 1
-            ? "Compare recordings side by side inside matching device frames."
-            : "Turn a screen recording into a polished phone mockup video."}
+            ? `Compare ${mediaMode === "video" ? "recordings" : "screenshots"} side by side inside matching device frames.`
+            : mediaMode === "video"
+              ? "Turn a screen recording into a polished phone mockup video."
+              : "Turn a screenshot into a polished phone mockup image."}
         </span>
+        <div className="mt-3 rounded-lg bg-stone-900/5 p-0.5 text-black/70">
+          <div className="relative flex w-36 items-center">
+            <div
+              className={cn(
+                "absolute inset-y-0 left-0 w-1/2 rounded-md bg-white shadow transition-transform duration-200",
+                mediaMode === "image" && "translate-x-full",
+              )}
+            />
+            {(["video", "image"] as MediaMode[]).map((mode) => (
+              <button
+                key={mode}
+                className="relative flex-1 cursor-pointer py-1 text-xs font-semibold capitalize"
+                onClick={() => handleMediaModeChange(mode)}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="w-full h-full justify-center items-center flex relative">
         <div
@@ -516,7 +572,7 @@ export default function App() {
               const videoAspect = dimensions && dimensions.width > 0 && dimensions.height > 0
                 ? dimensions.width / dimensions.height
                 : screenAspect;
-              const videoSizing = videoAspect > screenAspect
+              const mediaSizing = videoAspect > screenAspect
                 ? { height: `${videoScale}%`, width: "auto" }
                 : { width: `${videoScale}%`, height: "auto" };
               const maxScaleByColumn = (cellAspect * 0.97 / mockupAspect) * 100;
@@ -559,7 +615,9 @@ export default function App() {
                               />
                             </svg>
                             <p className="text-xs lg:text-sm text-center text-black/50 max-w-full">
-                              {deviceCount > 1 ? `Add video ${idx + 1}` : "Click or drag here to add a screen recording of your app"}
+                              {deviceCount > 1
+                                ? `Add ${mediaMode} ${idx + 1}`
+                                : `Click or drag here to add ${mediaMode === "video" ? "a screen recording" : "an image"} of your app`}
                             </p>
                           </div>
                         )}
@@ -576,13 +634,13 @@ export default function App() {
                           height: `${(selectedMockup.innerHeight / selectedMockup.height) * 100 * 1.01}%`,
                         }}
                       >
-                        {file && url && (
+                        {file && url && mediaMode === "video" && (
                           <video
                             controls={false}
                             muted
                             className="absolute left-1/2 top-1/2 max-w-none transition-transform duration-200"
                             style={{
-                              ...videoSizing,
+                              ...mediaSizing,
                               transform: "translate(-50%, -50%)",
                             }}
                             key={url}
@@ -634,6 +692,24 @@ export default function App() {
                             <source src={url} />
                           </video>
                         )}
+                        {file && url && mediaMode === "image" && (
+                          <img
+                            src={url}
+                            alt={`Uploaded screen ${idx + 1}`}
+                            className="absolute left-1/2 top-1/2 max-w-none transition-transform duration-200"
+                            style={{
+                              ...mediaSizing,
+                              transform: "translate(-50%, -50%)",
+                            }}
+                            onLoad={(event) => {
+                              setVideoDimensionsAt(idx, {
+                                width: event.currentTarget.naturalWidth,
+                                height: event.currentTarget.naturalHeight,
+                              });
+                            }}
+                            draggable={false}
+                          />
+                        )}
                       </div>
 
                       <img
@@ -653,7 +729,7 @@ export default function App() {
                         <input
                           type="file"
                           className="hidden"
-                          accept="video/*"
+                          accept={`${mediaMode}/*`}
                           onChange={handleFileChangeAt(idx)}
                         />
                       </label>
@@ -668,7 +744,7 @@ export default function App() {
               className="z-10 cursor-pointer flex items-center text-black/70 bg-white/90 hover:scale-105 transition-all ease-in-out shadow-md border-white/5 shadow-black/5 border backdrop-blur-3xl px-3.5 gap-1 text-sm font-medium py-1 rounded-md absolute bottom-3 left-4"
               onClick={handleGenerate}
             >
-              <span>Generate Video</span>
+              <span>Generate {mediaMode === "video" ? "Video" : "Image"}</span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 16 16"
@@ -729,32 +805,36 @@ export default function App() {
 
                   {deviceCount > 1 && (
                     <>
-                      <hr className="my-1.5 border-none" />
-                      <label className="font-normal mb-0.5 text-black/80 text-xs flex items-center justify-between">
-                        Shorter video behavior
-                      </label>
-                      <div className="bg-stone-900/5 rounded-lg text-black/70" style={{ padding: 2 }}>
-                        <div className="relative flex items-center">
-                          <div
-                            className={cn(
-                              "absolute left-0 inset-y-0 w-1/2 flex bg-white transition-all ease-in-out duration-200 transform rounded-md shadow",
-                              loopShorter ? "translate-x-0" : "translate-x-full",
-                            )}
-                          />
-                          <button
-                            className="relative flex-1 text-xs font-semibold capitalize items-center justify-center cursor-pointer m-px p-px py-0.5"
-                            onClick={() => setLoopShorter(true)}
-                          >
-                            Loop
-                          </button>
-                          <button
-                            className="relative flex-1 text-xs font-semibold capitalize items-center justify-center cursor-pointer m-px p-px py-0.5"
-                            onClick={() => setLoopShorter(false)}
-                          >
-                            Freeze
-                          </button>
-                        </div>
-                      </div>
+                      {mediaMode === "video" && (
+                        <>
+                          <hr className="my-1.5 border-none" />
+                          <label className="font-normal mb-0.5 text-black/80 text-xs flex items-center justify-between">
+                            Shorter video behavior
+                          </label>
+                          <div className="bg-stone-900/5 rounded-lg text-black/70" style={{ padding: 2 }}>
+                            <div className="relative flex items-center">
+                              <div
+                                className={cn(
+                                  "absolute left-0 inset-y-0 w-1/2 flex bg-white transition-all ease-in-out duration-200 transform rounded-md shadow",
+                                  loopShorter ? "translate-x-0" : "translate-x-full",
+                                )}
+                              />
+                              <button
+                                className="relative flex-1 text-xs font-semibold capitalize items-center justify-center cursor-pointer m-px p-px py-0.5"
+                                onClick={() => setLoopShorter(true)}
+                              >
+                                Loop
+                              </button>
+                              <button
+                                className="relative flex-1 text-xs font-semibold capitalize items-center justify-center cursor-pointer m-px p-px py-0.5"
+                                onClick={() => setLoopShorter(false)}
+                              >
+                                Freeze
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                       <hr className="my-1.5 border-none" />
                       <label className="font-normal mb-0.5 text-black/80 text-xs flex justify-between items-center">
                         <span>Gap</span>
@@ -837,8 +917,8 @@ export default function App() {
 
                   <hr className="my-1.5 border-none" />
                   <label className="font-normal mb-1 text-black/80 text-xs flex justify-between items-center">
-                    Video Size
-                    <button className="text-black/50 cursor-pointer" onClick={() => setVideoScale(100)} aria-label="Reset video size">
+                    {mediaMode === "video" ? "Video" : "Image"} Size
+                    <button className="text-black/50 cursor-pointer" onClick={() => setVideoScale(100)} aria-label="Reset media size">
                       <ResetIcon />
                     </button>
                   </label>
@@ -865,57 +945,41 @@ export default function App() {
                     onValueChange={(value) => setVerticalOffset(value[0])}
                   />
 
-                  <hr className="my-1.5 border-none" />
-                  <label className="font-normal mb-1 text-black/80 text-xs">Framerate</label>
-                  <div className="bg-stone-900/5 rounded-lg text-black/70" style={{ padding: 2 }}>
-                    <div className="relative flex items-center">
-                      <div
-                        className={cn(
-                          "absolute left-0 inset-y-0 w-1/2 flex bg-white transition-all ease-in-out duration-200 transform rounded-md shadow",
-                          selectedFramerate === 30 && "translate-x-0",
-                          selectedFramerate === 60 && "translate-x-full",
-                        )}
-                      />
-                      <button
-                        className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5"
-                        onClick={() => setSelectedFramerate(30)}
-                      >
-                        30
-                      </button>
-                      <button
-                        className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5"
-                        onClick={() => setSelectedFramerate(60)}
-                      >
-                        60
-                      </button>
-                    </div>
-                  </div>
+                  {mediaMode === "video" && (
+                    <>
+                      <hr className="my-1.5 border-none" />
+                      <label className="font-normal mb-1 text-black/80 text-xs">Framerate</label>
+                      <div className="bg-stone-900/5 rounded-lg text-black/70" style={{ padding: 2 }}>
+                        <div className="relative flex items-center">
+                          <div
+                            className={cn(
+                              "absolute left-0 inset-y-0 w-1/2 flex bg-white transition-all ease-in-out duration-200 transform rounded-md shadow",
+                              selectedFramerate === 30 && "translate-x-0",
+                              selectedFramerate === 60 && "translate-x-full",
+                            )}
+                          />
+                          <button className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5" onClick={() => setSelectedFramerate(30)}>30</button>
+                          <button className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5" onClick={() => setSelectedFramerate(60)}>60</button>
+                        </div>
+                      </div>
 
-                  <hr className="my-1.5 border-none" />
-                  <label className="font-normal mb-1 text-black/80 text-xs">Output</label>
-                  <div className="bg-stone-900/5 rounded-lg text-black/70" style={{ padding: 2 }}>
-                    <div className="relative flex items-center">
-                      <div
-                        className={cn(
-                          "absolute left-0 inset-y-0 w-1/2 flex bg-white transition-all ease-in-out duration-200 transform rounded-md shadow",
-                          exportFormat === "mp4" && "translate-x-0",
-                          exportFormat === "webm-transparent" && "translate-x-full",
-                        )}
-                      />
-                      <button
-                        className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5"
-                        onClick={() => setExportFormat("mp4")}
-                      >
-                        MP4
-                      </button>
-                      <button
-                        className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5"
-                        onClick={() => setExportFormat("webm-transparent")}
-                      >
-                        WebM
-                      </button>
-                    </div>
-                  </div>
+                      <hr className="my-1.5 border-none" />
+                      <label className="font-normal mb-1 text-black/80 text-xs">Output</label>
+                      <div className="bg-stone-900/5 rounded-lg text-black/70" style={{ padding: 2 }}>
+                        <div className="relative flex items-center">
+                          <div
+                            className={cn(
+                              "absolute left-0 inset-y-0 w-1/2 flex bg-white transition-all ease-in-out duration-200 transform rounded-md shadow",
+                              exportFormat === "mp4" && "translate-x-0",
+                              exportFormat === "webm-transparent" && "translate-x-full",
+                            )}
+                          />
+                          <button className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5" onClick={() => setExportFormat("mp4")}>MP4</button>
+                          <button className="relative flex-1 text-xs font-semibold items-center justify-center cursor-pointer m-px p-px py-0.5" onClick={() => setExportFormat("webm-transparent")}>WebM</button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {!isTransparentExport && (
                     <>
@@ -1066,7 +1130,7 @@ export default function App() {
               />
               <div className="w-full h-full absolute pointer-events-none" />
               <div className="text-xs bottom-3 left-4 text-black/50 font-mono absolute">
-                <span>Generating video... {Math.min(Math.round(progress), 100)}%</span>
+                <span>Generating {mediaMode}... {Math.min(Math.round(progress), 100)}%</span>
               </div>
             </>
           )}
@@ -1079,11 +1143,11 @@ export default function App() {
                   onClick={() => {
                     const a = document.createElement("a");
                     a.href = finishedVideoUrl;
-                    a.download = isTransparentExport ? "mockup.webm" : "mockup.mp4";
+                    a.download = mediaMode === "image" ? "mockup.png" : isTransparentExport ? "mockup.webm" : "mockup.mp4";
                     a.click();
                   }}
                 >
-                  <span>Download Video</span>
+                  <span>Download {mediaMode === "video" ? "Video" : "Image"}</span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 16 16"
@@ -1135,7 +1199,7 @@ export default function App() {
         </div>
       </div>
 
-      {anyVideoLoaded && !transpilingStarted && !transpilingFinished && (
+      {mediaMode === "video" && anyVideoLoaded && !transpilingStarted && !transpilingFinished && (
         <div className="w-full max-w-2xl px-[5%] pt-3">
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between rounded-md bg-white/60 px-2.5 py-2 text-xs text-black/60 shadow-sm ring-1 ring-black/5 backdrop-blur-xl">
@@ -1288,7 +1352,7 @@ export default function App() {
               clipRule="evenodd"
             />
           </svg>
-          <span className="flex-1 flex">This app runs 100% locally (using Mediabunny), so your video data never leaves your device.</span>
+          <span className="flex-1 flex">This app runs 100% locally, so your {mediaMode} data never leaves your device.</span>
         </div>
         <div className="text-xs text-black/30">© Laurids Kern {new Date().getFullYear()}</div>
       </div>

@@ -39,6 +39,13 @@ type GenerateVideoParams = {
   deviceGapPercent: number;
 };
 
+type GenerateImageParams = Omit<
+  GenerateVideoParams,
+  'videoFiles' | 'frameRate' | 'exportFormat' | 'loopShorter' | 'videoStartTimes' | 'videoEndTimes'
+> & {
+  imageFiles: File[];
+};
+
 interface UseMediabunnyHook {
   progress: number;
   reset: () => void;
@@ -46,6 +53,7 @@ interface UseMediabunnyHook {
   transpilingFinished: boolean;
   finishedVideoUrl: string | null;
   generateVideo: (params: GenerateVideoParams) => Promise<void>;
+  generateImage: (params: GenerateImageParams) => Promise<void>;
 }
 
 const createRoundedRectPath = (
@@ -429,12 +437,126 @@ const useMediabunny = (): UseMediabunnyHook => {
     }
   };
 
+  const generateImage = async ({
+    imageFiles,
+    mockup,
+    background,
+    mockupBackgroundColor,
+    phoneSizePercentage,
+    videoSizePercentage,
+    verticalOffset,
+    canvasWidth,
+    canvasHeight,
+    deviceGapPercent,
+  }: GenerateImageParams): Promise<void> => {
+    setTranspilingStarted(true);
+    setTranspilingFinished(false);
+    setProgress(0);
+
+    try {
+      const count = imageFiles.length;
+      const layout = computeLayout(
+        canvasWidth,
+        canvasHeight,
+        mockup,
+        phoneSizePercentage,
+        verticalOffset,
+        count,
+        deviceGapPercent,
+      );
+      const {
+        slots,
+        mockupWidth,
+        mockupHeight,
+        mockupInnerWidth,
+        mockupInnerHeight,
+        offsetX,
+        offsetY,
+        borderRadius,
+      } = layout;
+
+      const [mockupImage, imageBitmaps] = await Promise.all([
+        fetch(mockup.imageRelative)
+          .then((response) => response.blob())
+          .then((blob) => createImageBitmap(blob)),
+        Promise.all(imageFiles.map((file) => createImageBitmap(file))),
+      ]);
+
+      let backgroundImage: ImageBitmap | null = null;
+      if (background.type === 'image') {
+        backgroundImage = await createImageBitmap(background.file);
+      }
+
+      const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
+      const ctx = canvas.getContext('2d')!;
+      paintBackground(ctx, canvasWidth, canvasHeight, background, backgroundImage);
+
+      for (let i = 0; i < count; i++) {
+        const slot = slots[i];
+        const screenX = Math.round((slot.posX + offsetX) * 0.9995);
+        const screenY = Math.round((slot.posY + offsetY) * 0.9995);
+        const backdropX = Math.round((slot.posX + offsetX) * 0.995);
+        const backdropY = Math.round((slot.posY + offsetY) * 0.995);
+
+        ctx.save();
+        createRoundedRectPath(
+          ctx,
+          backdropX,
+          backdropY,
+          Math.round(mockupInnerWidth * 1.01),
+          Math.round(mockupInnerHeight * 1.01),
+          borderRadius,
+        );
+        ctx.fillStyle = mockupBackgroundColor;
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        createRoundedRectPath(ctx, screenX, screenY, mockupInnerWidth, mockupInnerHeight, borderRadius);
+        ctx.clip();
+        const source = imageBitmaps[i];
+        const imageRect = getCoveredVideoRect(
+          source.width,
+          source.height,
+          screenX,
+          screenY,
+          mockupInnerWidth,
+          mockupInnerHeight,
+          videoSizePercentage,
+        );
+        ctx.drawImage(source, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
+        ctx.restore();
+
+        ctx.drawImage(mockupImage, slot.posX, slot.posY, mockupWidth, mockupHeight);
+      }
+
+      setProgress(100);
+      const imageBlob = await canvas.convertToBlob({ type: 'image/png' });
+      const imageUrl = URL.createObjectURL(imageBlob);
+      setFinishedVideoUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return imageUrl;
+      });
+
+      mockupImage.close();
+      imageBitmaps.forEach((bitmap) => bitmap.close());
+      backgroundImage?.close();
+    } catch (error) {
+      console.error('Error generating image:', error);
+      throw error;
+    } finally {
+      setTranspilingFinished(true);
+      setTranspilingStarted(false);
+    }
+  };
+
   return {
     progress,
     transpilingStarted,
     transpilingFinished,
     finishedVideoUrl,
     generateVideo,
+    generateImage,
     reset,
   };
 };
