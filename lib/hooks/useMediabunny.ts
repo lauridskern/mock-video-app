@@ -13,11 +13,13 @@ import {
   VideoSample,
 } from 'mediabunny';
 import { Mockup } from '../constants/mockups';
+import { margeloTheme } from '../constants/themes';
 
 export type Background =
   | { type: 'color'; color: string }
   | { type: 'gradient'; from: string; to: string; angle: number }
-  | { type: 'image'; file: File };
+  | { type: 'image'; file: File }
+  | { type: 'margelo' };
 
 export type ExportFormat = 'mp4' | 'webm-transparent';
 
@@ -133,6 +135,28 @@ const paintBackground = (
   if (background.type === 'color') {
     ctx.fillStyle = background.color;
     ctx.fillRect(0, 0, width, height);
+    return;
+  }
+  if (background.type === 'margelo') {
+    ctx.fillStyle = margeloTheme.backgroundColor;
+    ctx.fillRect(0, 0, width, height);
+    const spacing = width * margeloTheme.tileFraction;
+    const half = (width * margeloTheme.plusSizeFraction) / 2;
+    ctx.save();
+    ctx.strokeStyle = margeloTheme.plusColor;
+    ctx.lineWidth = Math.max(width * margeloTheme.plusStrokeFraction, 1);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let y = spacing / 2; y < height + half; y += spacing) {
+      for (let x = spacing / 2; x < width + half; x += spacing) {
+        ctx.moveTo(x - half, y);
+        ctx.lineTo(x + half, y);
+        ctx.moveTo(x, y - half);
+        ctx.lineTo(x, y + half);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
     return;
   }
   if (background.type === 'gradient') {

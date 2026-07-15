@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { margeloTheme, margeloTileDataUri } from "@/lib/constants/themes";
 import type { Background } from "@/lib/hooks/useMediabunny";
 
 export const checkerboardBackground = [
@@ -31,6 +32,21 @@ export function buildPreviewSurfaceStyle(params: {
       backgroundImage: checkerboardBackground,
       backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0",
       backgroundSize: "24px 24px",
+    };
+  }
+
+  if (background.type === "margelo") {
+    // Tile size is a fraction of the surface width; the height percentage is
+    // scaled by the aspect ratio so the tile stays square, matching the canvas.
+    const tileWidthPercent = margeloTheme.tileFraction * 100;
+    const tileHeightPercent = tileWidthPercent * (aspectWidth / aspectHeight);
+    return {
+      ...base,
+      backgroundColor: margeloTheme.backgroundColor,
+      backgroundImage: `url("${margeloTileDataUri}")`,
+      backgroundPosition: "0 0",
+      backgroundSize: `${tileWidthPercent}% ${tileHeightPercent}%`,
+      backgroundRepeat: "repeat",
     };
   }
 
