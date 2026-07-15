@@ -34,6 +34,17 @@ export function buildPreviewSurfaceStyle(params: {
     };
   }
 
+  if (background.type === "pattern") {
+    return {
+      ...base,
+      backgroundColor: "transparent",
+      backgroundImage: `url(${background.url})`,
+      backgroundPosition: "center center",
+      backgroundSize: "cover",
+      backgroundRepeat: "no-repeat",
+    };
+  }
+
   if (background.type === "gradient") {
     return {
       ...base,

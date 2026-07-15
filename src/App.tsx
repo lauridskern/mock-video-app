@@ -13,7 +13,7 @@ import {
   defaultSolidColor,
   normalizeColorHex,
 } from "@/lib/colorFormat";
-import { colors } from "@/lib/constants/colors";
+import { colors, gridPatternColors, gridPatternUrl } from "@/lib/constants/colors";
 import { gradientPresets } from "@/lib/constants/gradientPresets";
 import { mockupsDefs } from "@/lib/constants/mockups";
 import { aspectRatios } from "@/lib/constants/sizes";
@@ -35,6 +35,16 @@ import { Popover, PopoverTrigger, PopoverContent } from "@radix-ui/react-popover
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type DeviceCount = 1 | 2 | 3;
+
+// grid.png's 2px lines vanish when scaled into a 24px swatch, so swatches draw the same pattern with CSS instead.
+const gridSwatchStyle = {
+  backgroundColor: gridPatternColors.background,
+  backgroundImage: [
+    `linear-gradient(to right, ${gridPatternColors.line} 1px, transparent 1px)`,
+    `linear-gradient(to bottom, ${gridPatternColors.line} 1px, transparent 1px)`,
+  ].join(", "),
+  backgroundSize: "6px 6px",
+};
 type BgTab = "color" | "gradient" | "image";
 type MediaMode = "video" | "image";
 
@@ -66,6 +76,7 @@ export default function App() {
 
   const [bgTab, setBgTab] = useState<BgTab>("color");
   const [solidColor, setSolidColor] = useState(defaultSolidColor);
+  const [useGridBackground, setUseGridBackground] = useState(false);
   const [gradient, setGradient] = useState({ from: "#a5f3fc", to: "#f5d0fe", angle: 135 });
   const [bgImageFile, setBgImageFile] = useState<File | null>(null);
   const [bgImageUrl, setBgImageUrl] = useState<string>("");
@@ -73,8 +84,9 @@ export default function App() {
   const background: Background = useMemo(() => {
     if (bgTab === "gradient") return { type: "gradient", ...gradient };
     if (bgTab === "image" && bgImageFile) return { type: "image", file: bgImageFile };
+    if (bgTab === "color" && useGridBackground) return { type: "pattern", url: gridPatternUrl };
     return { type: "color", color: solidColor };
-  }, [bgTab, gradient, bgImageFile, solidColor]);
+  }, [bgTab, gradient, bgImageFile, solidColor, useGridBackground]);
 
   const isTransparentExport = mediaMode === "video" && exportFormat === "webm-transparent";
   const previewSurfaceStyle = useMemo(
@@ -1015,22 +1027,46 @@ export default function App() {
                               "w-6 h-6 rounded-full cursor-pointer flex items-center justify-center border border-black/10 shadow-sm flex-shrink-0",
                             )}
                             style={{ backgroundColor: color }}
-                            onClick={() => setSolidColor(normalizeColorHex(color))}
+                            onClick={() => {
+                              setUseGridBackground(false);
+                              setSolidColor(normalizeColorHex(color));
+                            }}
                             aria-label={`Color ${color}`}
                           >
-                            {solidColor === color && <div className="bg-white shadow-sm rounded-full h-2.5 w-2.5" />}
+                            {!useGridBackground && solidColor === color && (
+                              <div className="bg-white shadow-sm rounded-full h-2.5 w-2.5" />
+                            )}
                           </button>
                         ))}
+                        <button
+                          className="w-6 h-6 rounded-full cursor-pointer flex items-center justify-center border border-black/10 shadow-sm flex-shrink-0"
+                          style={gridSwatchStyle}
+                          onClick={() => setUseGridBackground(true)}
+                          aria-label="Grid pattern"
+                        >
+                          {useGridBackground && <div className="bg-white shadow-sm rounded-full h-2.5 w-2.5" />}
+                        </button>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-black/70">
                         <span className="flex-1">Custom</span>
-                        <input
-                          type="color"
-                          autoComplete="off"
-                          value={solidColor}
-                          onChange={(e) => setSolidColor(normalizeColorHex(e.target.value))}
-                          className={colorPickerSwatchInputClassName}
-                        />
+                        <span className="relative h-6 w-6 flex-shrink-0">
+                          <input
+                            type="color"
+                            autoComplete="off"
+                            value={solidColor}
+                            onChange={(e) => {
+                              setUseGridBackground(false);
+                              setSolidColor(normalizeColorHex(e.target.value));
+                            }}
+                            className={colorPickerSwatchInputClassName}
+                          />
+                          {useGridBackground && (
+                            <span
+                              className="pointer-events-none absolute inset-0 rounded-full border border-black/10 shadow-sm"
+                              style={gridSwatchStyle}
+                            />
+                          )}
+                        </span>
                       </label>
                     </div>
                   )}
